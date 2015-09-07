@@ -2,10 +2,9 @@
 open System.IO
  
 Environment.CurrentDirectory <- __SOURCE_DIRECTORY__
-
+//Bootstrap paket
 let dst = ".paket\paket.exe"
 if not (File.Exists dst) then
-    //let url = "https://github.com/fsprojects/Paket/releases/download/1.26.1/paket.exe"
     let urlRef = @"https://fsprojects.github.io/Paket/stable"
     use wc = new Net.WebClient()
     let url = wc.DownloadString(urlRef)
@@ -14,7 +13,7 @@ if not (File.Exists dst) then
     Directory.CreateDirectory(".paket") |> ignore
     File.Move(tmp, dst)
  
-// Step 1. Resolve and install the packages
+//Resolve and install the packages
  
 #r ".paket\paket.exe"
  
@@ -24,7 +23,7 @@ nuget FSharp.Data
 nuget Newtonsoft.Json
 """
 
-// Step 2. Use the packages
+//Use the packages
  
 #r @"packages\Newtonsoft.Json\lib\net45\Newtonsoft.Json.dll"
 #r @"packages\FSharp.Data\lib\net40\FSharp.Data.dll"
@@ -43,8 +42,6 @@ let GetHtmlDocument (tokens:(string*string)[]) =
     printfn "%s" formData
     HtmlDocument.Load(baseUrl + formData)
 
-//test GetWebPage
-let CourseStartDate = DateTime(2015,09,21)
 type CourseEvent =
     {
         Code : string;
@@ -55,12 +52,13 @@ type CourseEvent =
         Location:string;
     }
 
-let Weekdays = [|"mon";"tue";"wed";"thu";"fri";"sat";"sun"|]
 let ParseTime (s_t:string(*9:00*)) =
     let toks = s_t.Split([|':'|])
     let h = toks.[0].Trim().AsInteger()
     let m = toks.[1].Trim().AsInteger()
     TimeSpan(h,m,0)
+
+let Weekdays = [|"mon";"tue";"wed";"thu";"fri";"sat";"sun"|]
 
 let DecodeDate (s:string) (*Tue @ 9:00-11:00*)= 
     printfn "%s" s
@@ -74,7 +72,7 @@ let DecodeDate (s:string) (*Tue @ 9:00-11:00*)=
     let weekOffset = Weekdays|> Array.findIndex(fun k-> k = weekday.ToLowerInvariant())
     (weekOffset,start,finish)
 
-let GenerateCourseDates (cols:string[]) = 
+let GenerateCourseDates (courseStartDate:DateTime) (cols:string[]) = 
     cols.[5].Split([|' ';'\r';'\n'|],StringSplitOptions.RemoveEmptyEntries)
     |> Array.mapi(fun i s -> i, (s.Trim() = "1") )
     |> Array.choose(fun (i,b) -> 
@@ -85,14 +83,13 @@ let GenerateCourseDates (cols:string[]) =
                     Code = cols.[0].Trim();
                     Name = cols.[1].Trim();
                     Tutor = cols.[2].Trim();
-                    StartTime = CourseStartDate.Add(new TimeSpan(i*7 + od,st.Hours,st.Minutes,0));
-                    FinishTime = CourseStartDate.Add(new TimeSpan(i*7 + od,ft.Hours,ft.Minutes,0));
+                    StartTime = courseStartDate.Add(new TimeSpan(i*7 + od,st.Hours,st.Minutes,0));
+                    FinishTime = courseStartDate.Add(new TimeSpan(i*7 + od,ft.Hours,ft.Minutes,0));
                     Location = cols.[4].Trim()
                 }
         else
             None
         )
-
 
 let ParseCategory (name:string) = 
     if name.Contains("(Lec") then "Lec" else
@@ -116,7 +113,7 @@ END:VEVENT"
             (c.Code + "    " + (ParseCategory c.Name)  + "    " + c.Location)
             (c.Name + " " + c.Location + " " + c.Tutor)
 
-let ParseTableGenerateSchedule (courseCode:string) = 
+let ParseTableGenerateSchedule (date:DateTime) (courseCode:string) = 
     let html = [|("keyword",courseCode);("term","1:tb1")|] |> GetHtmlDocument 
 
     html.Descendants[@"table"] //get tables
@@ -130,7 +127,7 @@ let ParseTableGenerateSchedule (courseCode:string) =
         |> Seq.toArray 
         |> fun k-> k
         |> fun t -> if t.Length > 5 then
-                        Some (GenerateCourseDates t)
+                        Some (GenerateCourseDates date t)
                     else
                         None
         )
@@ -138,8 +135,10 @@ let ParseTableGenerateSchedule (courseCode:string) =
     |> Array.concat
 
 //================================
+let CourseStartDate = DateTime(2015,09,21) //Should start on a Monday
+
 [|"819G5";"826G5";"817G5";"955G5";"802G5";"823G5"|] // autumn 2015 schedule
-|>Array.map ParseTableGenerateSchedule
+|>Array.map(fun code -> ParseTableGenerateSchedule CourseStartDate code)
 |>Array.concat
 |>Array.sortBy(fun k-> k.StartTime)
 //|>Array.take 20
